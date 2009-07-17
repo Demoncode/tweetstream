@@ -8,6 +8,7 @@ __docformat__ = "restructuredtext"
 
 import urllib
 import urllib2
+import socket
 import time
 import anyjson
 
@@ -121,8 +122,7 @@ class TweetStream(object):
         return self
 
     def __exit__(self, *params):
-        if self._conn:
-            self._conn.close()
+        self.close()
         return False
 
     def _init_conn(self):
@@ -170,23 +170,30 @@ class TweetStream(object):
                 self._rate_cnt = 0
                 self._rate_ts = time.time()
 
-            self.count += 1
-            self._rate_cnt += 1
             data = self._conn.readline()
             if len(data) == 0: # something is wrong
                 self.close()
                 raise ConnectionError("Got entry of length 0. Disconnected")
 
-            return anyjson.deserialize(data)
+            data = anyjson.deserialize(data)
+            self.count += 1
+            self._rate_cnt += 1
+            return data
+
         except ValueError, e:
             self.close()
             raise ConnectionError("Got invalid data from twitter")
+        except socket.error, e:
+            self.close()
+            raise ConnectionError("Server disconnected")
+
 
     def close(self):
         """
         Close the connection to the streaming server.
         """
         self.connected = False
+
         self._conn.close()
 
 
