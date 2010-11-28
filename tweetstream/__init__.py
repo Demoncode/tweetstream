@@ -55,7 +55,7 @@ class ConnectionError(TweetStreamError):
 
 
 class TweetStream(object):
-    """A network connection to Twitters streaming API
+    """A network connection to Twitter's streaming API
 
     :param username: Twitter username for the account accessing the API.
     :param password: Twitter password for the account accessing the API.
@@ -71,6 +71,11 @@ class TweetStream(object):
     .. attribute:: url
 
         The URL to which the object is connected
+
+    .. attribute:: want_json
+
+        If True, the client will return raw JSON data rather than deserializing
+        it into Python objects. Default False.
 
     .. attribute:: starttime
 
@@ -102,12 +107,13 @@ class TweetStream(object):
         :attr: `USER_AGENT`.
 """
 
-    def __init__(self, username, password, url="sample"):
+    def __init__(self, username, password, url="sample", want_json=False):
         self._conn = None
         self._rate_ts = None
         self._rate_cnt = 0
         self._username = username
         self._password = password
+        self.want_json = want_json
 
         self.rate_period = 10 # in seconds
         self.connected = False
@@ -182,10 +188,9 @@ class TweetStream(object):
                 elif data.isspace():
                     continue
 
-                data = anyjson.deserialize(data)
                 self.count += 1
                 self._rate_cnt += 1
-                return data
+                return data if self.want_json else anyjson.deserialize(data)
 
             except ValueError, e:
                 self.close()
@@ -227,13 +232,13 @@ class ReconnectingTweetStream(TweetStream):
 
     """
 
-    def __init__(self, username, password, url="sample",
+    def __init__(self, username, password, url="sample", want_json=False,
                  reconnects=3, error_cb=None, retry_wait=5):
         self.max_reconnects = reconnects
         self.retry_wait = retry_wait
         self._reconnects = 0
         self._error_cb = error_cb
-        TweetStream.__init__(self, username, password, url=url)
+        TweetStream.__init__(self, username, password, url=url, want_json=want_json)
 
     def next(self):
         while True:
@@ -256,16 +261,16 @@ class ReconnectingTweetStream(TweetStream):
 class FollowStream(TweetStream):
     """Stream class for getting tweets from followers.
 
-        :param user: See TweetStream
+    :param user: See TweetStream
 
-        :param password: See TweetStream
+    :param password: See TweetStream
 
-        :param followees: Iterable containing user IDs to follow.
-          ***Note:*** the user id in question is the numeric ID twitter uses,
-          not the normal username.
+    :param followees: Iterable containing user IDs to follow.
+      ***Note:*** the user id in question is the numeric ID twitter uses,
+      not the normal username.
 
-        :keyword url: Like the url argument to TweetStream, except default
-          value is the "follow" endpoint.
+    :keyword url: Like the url argument to TweetStream, except default
+      value is the "follow" endpoint.
     """
 
     def __init__(self, user, password, followees, url="follow", **kwargs):
@@ -302,26 +307,28 @@ class ReconnectingTrackStream(ReconnectingTweetStream):
     automatically tries to reconnect if the connecting goes down. Reconnecting,
     and waiting for reconnecting, is blocking.
 
-        :param user: See TweetStream
+    :param user: See TweetStream
 
-        :param password: See TweetStream
+    :param password: See TweetStream
 
-        :param keywords: Iterable containing keywords to look for
+    :param keywords: Iterable containing keywords to look for
 
-        :keyword url: Like the url argument to TweetStream, except default
-          value is the "track" endpoint.
+    :keyword url: Like the url argument to TweetStream, except default
+      value is the "track" endpoint.
 
-        :keyword reconnects: see ReconnectingTweetStream
+    :keyword reconnects: see ReconnectingTweetStream
 
-        :error_cb: see ReconnectingTweetStream
+    :error_cb: see ReconnectingTweetStream
 
-        :retry_wait: see ReconnectingTweetStream
+    :retry_wait: see ReconnectingTweetStream
 
     """
 
-    def __init__(self, user, password, keywords, url="track", reconnects=3, error_cb=None, retry_wait=5):
+    def __init__(self, user, password, keywords, url="track", want_json=False,
+            reconnects=3, error_cb=None, retry_wait=5):
         self.keywords = keywords
-        ReconnectingTweetStream.__init__(self, user, password, url=url, reconnects=3, error_cb=None, retry_wait=5)
+        ReconnectingTweetStream.__init__(self, user, password, url=url, want_json=want_json,
+                reconnects=reconnects, error_cb=error_cb, retry_wait=retry_wait)
 
     def _get_post_data(self):
         return urllib.urlencode({"track": ",".join(self.keywords)})

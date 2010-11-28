@@ -1,6 +1,7 @@
 import contextlib
 import threading
 import time
+import anyjson
 from BaseHTTPServer import BaseHTTPRequestHandler, HTTPServer
 
 from nose.tools import assert_raises
@@ -123,6 +124,22 @@ def smoke_test_receive_tweets():
     do_test(FollowStream, [1, 2, 3])
     do_test(TrackStream, ["foo", "bar"])
 
+def test_want_json():
+    """Check we get a string back and can parse it okay when want_json=True"""
+    def tweetsource(request):
+        yield single_tweet + "\n"
+
+    def do_test(klass, *args):
+        with test_server(handler=tweetsource,
+                         methods=("post", "get"), port="random") as server:
+            stream = klass("foo", "bar", *args, url=server.baseurl, want_json=True)
+            for tweet in stream:
+                assert isinstance(tweet, str)
+                anyjson.dserialize(tweet)
+
+    do_test(TweetStream)
+    do_test(FollowStream, [1, 2, 3])
+    do_test(TrackStream, ["foo", "bar"])
 
 def test_keepalive():
     """Make sure we behave sanely when there are keepalive newlines in the
