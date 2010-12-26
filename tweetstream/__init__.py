@@ -221,40 +221,51 @@ class ReconnectingTweetStream(TweetStream):
 
     :keyword url: See :TweetStream:
 
-    :keyword reconnects: Number of reconnects before a ConnectionError is
-        raised. Default is 3
+    :keyword initial_wait: Number of seconds to wait after first error before
+        trying to reconnect. This will be doubled after each failed reconnect
+        attempt until a successful connection is made or max_wait is hit/exceeded.
+        This is known as exponential backoff, see:
+        http://dev.twitter.com/pages/streaming_api_concepts
+        Default is 10
+
+    :keyword max_wait: Max number of seconds to wait during exponential
+        backoff before giving up and throwing a ConnectionError.
 
     :error_cb: Optional callable that will be called just before trying to
         reconnect. The callback will be called with a single argument, the
         exception that caused the reconnect attempt. Default is None
 
-    :retry_wait: Time to wait before reconnecting in seconds. Default is 5
-
     """
 
     def __init__(self, username, password, url="sample", want_json=False,
-                 reconnects=3, error_cb=None, retry_wait=5):
-        self.max_reconnects = reconnects
-        self.retry_wait = retry_wait
-        self._reconnects = 0
+                 initial_wait=10, max_wait=240, error_cb=None):
+        self.initial_wait = initial_wait
+        self.max_wait = max_wait
+        self.curr_wait = initial_wait
         self._error_cb = error_cb
         TweetStream.__init__(self, username, password, url=url, want_json=want_json)
 
     def next(self):
         while True:
             try:
-                return TweetStream.next(self)
+                tweet = TweetStream.next(self)
+                # If we got here, no error was thrown, so reset curr_wait
+                self.curr_wait = self.initial_wait
+                return tweet
             except ConnectionError, e:
-                self._reconnects += 1
-                if self._reconnects > self.max_reconnects:
-                    raise ConnectionError("Too many retries")
+                if self.curr_wait >= self.max_wait:
+                    msg = 'max_wait (%d secs) exceeded, giving up on exponential backoff' % self.max_wait
+                    raise ConnectionError(msg)
 
                 # Note: error_cb is not called on the last error since we
                 # raise a ConnectionError instead
                 if  callable(self._error_cb):
                     self._error_cb(e)
 
-                time.sleep(self.retry_wait)
+                time.sleep(self.curr_wait)
+
+                # Double curr_wait for next attempt
+                self.curr_wait *= 2
         # Don't listen to auth error, since we can't reasonably reconnect
         # when we get one.
 
@@ -316,19 +327,19 @@ class ReconnectingTrackStream(ReconnectingTweetStream):
     :keyword url: Like the url argument to TweetStream, except default
       value is the "track" endpoint.
 
-    :keyword reconnects: see ReconnectingTweetStream
+    :keyword initial_wait: see ReconnectingTweetStream
+
+    :keyword max_wait: see ReconnectingTweetStream
 
     :error_cb: see ReconnectingTweetStream
-
-    :retry_wait: see ReconnectingTweetStream
 
     """
 
     def __init__(self, user, password, keywords, url="track", want_json=False,
-            reconnects=3, error_cb=None, retry_wait=5):
+            initial_wait=10, max_wait=240, error_cb=None):
         self.keywords = keywords
         ReconnectingTweetStream.__init__(self, user, password, url=url, want_json=want_json,
-                reconnects=reconnects, error_cb=error_cb, retry_wait=retry_wait)
+                initial_wait=initial_wait, max_wait=max_wait, error_cb=error_cb)
 
     def _get_post_data(self):
         return urllib.urlencode({"track": ",".join(self.keywords)})
