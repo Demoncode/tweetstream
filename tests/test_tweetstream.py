@@ -155,9 +155,9 @@ def test_want_json():
         with test_server(handler=tweetsource,
                          methods=("post", "get"), port="random") as server:
             stream = klass("foo", "bar", *args, url=server.baseurl, want_json=True)
-            for tweet in stream:
-                assert isinstance(tweet, str)
-                anyjson.deserialize(tweet)
+            tweet = stream.next()
+            assert isinstance(tweet, str)
+            anyjson.deserialize(tweet)
 
     do_test(TweetStream)
     do_test(FollowStream, [1, 2, 3])
