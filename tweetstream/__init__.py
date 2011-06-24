@@ -31,6 +31,7 @@ URLS = {"firehose": "http://stream.twitter.com/1/statuses/firehose.json",
 
 USER_AGENT = "TweetStream %s" % __version__
 
+socket._fileobject.default_bufsize = 0
 
 class TweetStreamError(Exception):
     """Base class for all tweetstream errors"""
