@@ -344,3 +344,41 @@ class ReconnectingTrackStream(ReconnectingTweetStream):
 
     def _get_post_data(self):
         return urllib.urlencode({"track": ",".join(self.keywords)})
+
+
+class ReconnectingTrackFollowStream(ReconnectingTweetStream):
+    """Stream class for getting tweets relevant to keywords and following specific users, which
+    automatically tries to reconnect if the connecting goes down. Reconnecting,
+    and waiting for reconnecting, is blocking.
+
+    :param user: See TweetStream
+
+    :param password: See TweetStream
+
+    :param keywords: Iterable containing keywords to look for
+
+    :keyword url: Like the url argument to TweetStream, except default
+      value is the "track" endpoint.
+
+    :keyword initial_wait: see ReconnectingTweetStream
+
+    :keyword max_wait: see ReconnectingTweetStream
+
+    :error_cb: see ReconnectingTweetStream
+
+    """
+
+    def __init__(self, user, password, keywords, user_ids, url="track", want_json=False,
+            initial_wait=10, max_wait=240, error_cb=None):
+        self.keywords = keywords
+        self.user_ids = user_ids
+        ReconnectingTweetStream.__init__(self, user, password, url=url, want_json=want_json,
+                initial_wait=initial_wait, max_wait=max_wait, error_cb=error_cb)
+
+    def _get_post_data(self):
+        data = dict()
+        if len(self.keywords) > 0:
+            data['track'] = ",".join(self.keywords)
+        if len(self.user_ids) > 0:
+            data['follow'] = ",".join(self.user_ids)
+        return urllib.urlencode(data)
