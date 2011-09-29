@@ -24,10 +24,10 @@ import anyjson
 
 """
 
-URLS = {"firehose": "http://stream.twitter.com/1/statuses/firehose.json",
-        "sample": "http://stream.twitter.com/1/statuses/sample.json",
-        "follow": "http://stream.twitter.com/1/statuses/filter.json",
-        "track": "http://stream.twitter.com/1/statuses/filter.json"}
+URLS = {"firehose": "https://stream.twitter.com/1/statuses/firehose.json",
+        "sample": "https://stream.twitter.com/1/statuses/sample.json",
+        "follow": "https://stream.twitter.com/1/statuses/filter.json",
+        "track": "https://stream.twitter.com/1/statuses/filter.json"}
 
 USER_AGENT = "TweetStream %s" % __version__
 
