@@ -209,6 +209,9 @@ class TweetStream(object):
         self.connected = False
         if self._conn:
             self._conn.close()
+            
+    def _encode_all(self, l):
+        return [i.encode('utf-8') for i in l]
 
 
 class ReconnectingTweetStream(TweetStream):
@@ -290,7 +293,7 @@ class FollowStream(TweetStream):
         TweetStream.__init__(self, user, password, url=url, **kwargs)
 
     def _get_post_data(self):
-        return urllib.urlencode({"follow": ",".join(map(str, self.followees))})
+        return urllib.urlencode({"follow": ",".join(map(str, self._encode_all(self.followees)))})
 
 
 class TrackStream(TweetStream):
@@ -311,7 +314,7 @@ class TrackStream(TweetStream):
         TweetStream.__init__(self, user, password, url=url, **kwargs)
 
     def _get_post_data(self):
-        return urllib.urlencode({"track": ",".join(self.keywords)})
+        return urllib.urlencode({"track": ",".join(self._encode_all(self.keywords))})
 
 
 class ReconnectingTrackStream(ReconnectingTweetStream):
@@ -343,7 +346,7 @@ class ReconnectingTrackStream(ReconnectingTweetStream):
                 initial_wait=initial_wait, max_wait=max_wait, error_cb=error_cb)
 
     def _get_post_data(self):
-        return urllib.urlencode({"track": ",".join(self.keywords)})
+        return urllib.urlencode({"track": ",".join(self._encode_all(self.keywords))})
 
 
 class ReconnectingTrackFollowStream(ReconnectingTweetStream):
@@ -378,7 +381,7 @@ class ReconnectingTrackFollowStream(ReconnectingTweetStream):
     def _get_post_data(self):
         data = dict()
         if len(self.keywords) > 0:
-            data['track'] = ",".join(self.keywords)
+            data['track'] = ",".join(self._encode_all(self.keywords))
         if len(self.user_ids) > 0:
-            data['follow'] = ",".join(self.user_ids)
+            data['follow'] = ",".join(self._encode_all(self.user_ids))
         return urllib.urlencode(data)
