@@ -11,7 +11,9 @@ import urllib2
 import socket
 import time
 import anyjson
+import logging
 
+logger = logging.getLogger(__name__)
 
 """
  .. data:: URLS
@@ -47,9 +49,10 @@ class ConnectionError(TweetStreamError):
     """Raised when there are network problems. This means when there are
     dns errors, network errors, twitter issues"""
 
-    def __init__(self, reason, details=None):
+    def __init__(self, reason, details=None, exception=None):
         self.reason = reason
         self.details = details
+        self.exception = exception
 
     def __str__(self):
         return '<ConnectionError %s>' % self.reason
@@ -148,6 +151,7 @@ class TweetStream(object):
         try:
             self._conn = opener.open(req)
         except urllib2.HTTPError, exception:
+            logging.warning('error: %s', exception)
             if exception.code == 401:
                 raise AuthenticationError("Access denied")
             elif exception.code == 404:
@@ -155,8 +159,9 @@ class TweetStream(object):
             else: # re raise. No idea what would cause this, so want to know
                 raise
         except urllib2.URLError, exception:
-            raise ConnectionError(exception.reason)
-
+            raise ConnectionError(exception.reason, exception=exception)
+            
+        logger.info('connected')
         self.connected = True
         if not self.starttime:
             self.starttime = time.time()
@@ -258,6 +263,7 @@ class ReconnectingTweetStream(TweetStream):
                 return tweet
             except ConnectionError, e:
                 if self.curr_wait >= self.max_wait:
+                    logger.critical('giving up')
                     msg = 'max_wait (%d secs) exceeded, giving up on exponential backoff' % self.max_wait
                     raise ConnectionError(msg)
 
@@ -265,11 +271,12 @@ class ReconnectingTweetStream(TweetStream):
                 # raise a ConnectionError instead
                 if  callable(self._error_cb):
                     self._error_cb(e)
-
+                logger.warning('waiting %d seconds', self.curr_wait)
                 time.sleep(self.curr_wait)
 
                 # Double curr_wait for next attempt
                 self.curr_wait *= 2
+                
         # Don't listen to auth error, since we can't reasonably reconnect
         # when we get one.
 
