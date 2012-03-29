@@ -156,6 +156,8 @@ class TweetStream(object):
                 raise AuthenticationError("Access denied")
             elif exception.code == 404:
                 raise ConnectionError("URL not found: %s" % self.url)
+	    elif exception.code == 420:
+		raise ConnectionError('Increase your calm')
             else: # re raise. No idea what would cause this, so want to know
                 raise
         except urllib2.URLError, exception:
@@ -204,7 +206,7 @@ class TweetStream(object):
 
             except socket.error, e:
                 self.close()
-                raise ConnectionError("Server disconnected")
+                raise ConnectionError("Server disconnected", exception=e)
 
 
     def close(self):
@@ -266,12 +268,11 @@ class ReconnectingTweetStream(TweetStream):
                     logger.critical('giving up')
                     msg = 'max_wait (%d secs) exceeded, giving up on exponential backoff' % self.max_wait
                     raise ConnectionError(msg)
-
                 # Note: error_cb is not called on the last error since we
                 # raise a ConnectionError instead
                 if  callable(self._error_cb):
                     self._error_cb(e)
-                logger.warning('waiting %d seconds', self.curr_wait)
+                logger.warning('waiting %d seconds: %s %s', self.curr_wait, e, repr(e.exception))
                 time.sleep(self.curr_wait)
 
                 # Double curr_wait for next attempt
