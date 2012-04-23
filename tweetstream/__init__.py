@@ -158,7 +158,7 @@ class TweetStream(object):
                 raise ConnectionError("URL not found: %s" % self.url)
             elif exception.code == 420:
                 raise ConnectionError('Increase your calm')
-            elif exception.code == 503:
+            elif exception.code in (502, 503):                                   
                 raise ConnectionError("Twitter is down: %s" % exception)
             else: # re raise. No idea what would cause this, so want to know
                 raise
