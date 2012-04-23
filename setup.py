@@ -9,7 +9,7 @@ homepage = "http://bitbucket.org/runeh/tweetstream/"
 setup(name='tweetstream',
     version=version,
     description="Simple Twitter streaming API access",
-    long_description=open("README").read(),
+    long_description=open("README.rst").read(),
     classifiers=[
         'License :: OSI Approved :: BSD License',
         'Intended Audience :: Developers',
