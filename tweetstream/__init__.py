@@ -148,7 +148,10 @@ class TweetStream(object):
         handler = urllib2.HTTPBasicAuthHandler(password_mgr)
         opener = urllib2.build_opener(handler)
 
+        logger.info('built request to %s %s %s', self.url, self._get_post_data(), headers)
+
         try:
+            logger.info('about to open')
             self._conn = opener.open(req)
         except urllib2.HTTPError, exception:
             logging.warning('error: %s', exception)
@@ -163,6 +166,7 @@ class TweetStream(object):
             else: # re raise. No idea what would cause this, so want to know
                 raise
         except urllib2.URLError, exception:
+            logger.info('got an error %s', exception.reason)
             raise ConnectionError(exception.reason, exception=exception)
             
         logger.info('connected')
