@@ -148,7 +148,7 @@ class TweetStream(object):
         handler = urllib2.HTTPBasicAuthHandler(password_mgr)
         opener = urllib2.build_opener(handler)
 
-        logger.info('built request to %s %s %s', self.url, self._get_post_data(), headers)
+        logger.debug('built request to %s %s %s', self.url, self._get_post_data(), headers)
 
         try:
             logger.info('about to open')
