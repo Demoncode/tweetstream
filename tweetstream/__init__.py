@@ -12,6 +12,7 @@ import socket
 import time
 import anyjson
 import logging
+import oauth2
 
 logger = logging.getLogger(__name__)
 
@@ -26,10 +27,10 @@ logger = logging.getLogger(__name__)
 
 """
 
-URLS = {"firehose": "https://stream.twitter.com/1/statuses/firehose.json",
-        "sample": "https://stream.twitter.com/1/statuses/sample.json",
-        "follow": "https://stream.twitter.com/1/statuses/filter.json",
-        "track": "https://stream.twitter.com/1/statuses/filter.json"}
+URLS = {"firehose": "https://stream.twitter.com/1.1/statuses/firehose.json",
+        "sample": "https://stream.twitter.com/1.1/statuses/sample.json",
+        "follow": "https://stream.twitter.com/1.1/statuses/filter.json",
+        "track": "https://stream.twitter.com/1.1/statuses/filter.json"}
 
 USER_AGENT = "TweetStream %s" % __version__
 
@@ -111,12 +112,16 @@ class TweetStream(object):
         :attr: `USER_AGENT`.
 """
 
-    def __init__(self, username, password, url="sample", want_json=False):
+    def __init__(self, consumer_key, consumer_secret, access_token,
+                 access_secret, timeout=None, url="sample", want_json=False):
         self._conn = None
         self._rate_ts = None
         self._rate_cnt = 0
-        self._username = username
-        self._password = password
+        self._consumer_key = consumer_key
+        self._consumer_secret = consumer_secret
+        self._access_token = access_token
+        self._access_secret = access_secret
+        self._timeout = timeout
         self.want_json = want_json
 
         self.rate_period = 10 # in seconds
@@ -139,42 +144,74 @@ class TweetStream(object):
 
     def _init_conn(self):
         """Open the connection to the twitter server"""
-        headers = {'User-Agent': self.user_agent}
-        req = urllib2.Request(self.url, self._get_post_data(), headers)
+        postdata = self._get_post_data() or {}
+        poststring = urllib.urlencode(postdata) if postdata else None
+        headers = { 'User-Agent': self.user_agent,
+                    'Authorization': self._get_oauth_header(postdata) }
+        req = urllib2.Request(self.url, poststring, headers)
 
-        password_mgr = urllib2.HTTPPasswordMgrWithDefaultRealm()
-        password_mgr.add_password(None, self.url, self._username,
-                                  self._password)
-        handler = urllib2.HTTPBasicAuthHandler(password_mgr)
-        opener = urllib2.build_opener(handler)
-
-        logger.debug('built request to %s %s %s', self.url, self._get_post_data(), headers)
+        logger.debug('built request to %s %s %s', self.url, postdata, headers)
 
         try:
             logger.info('about to open')
-            self._conn = opener.open(req)
+            self._conn = urllib2.urlopen(req, timeout=self._timeout)
         except urllib2.HTTPError, exception:
             logging.warning('error: %s', exception)
             if exception.code == 401:
-                raise AuthenticationError("Access denied")
+                raise AuthenticationError(str(exception))
             elif exception.code == 404:
                 raise ConnectionError("URL not found: %s" % self.url)
             elif exception.code == 420:
                 raise ConnectionError('Increase your calm')
-            elif exception.code in (502, 503):                                   
+            elif exception.code in (502, 503):
                 raise ConnectionError("Twitter is down: %s" % exception)
             else: # re raise. No idea what would cause this, so want to know
                 raise
         except urllib2.URLError, exception:
             logger.info('got an error %s', exception.reason)
             raise ConnectionError(exception.reason, exception=exception)
-            
+
         logger.info('connected')
         self.connected = True
         if not self.starttime:
             self.starttime = time.time()
         if not self._rate_ts:
             self._rate_ts = time.time()
+
+    def _get_oauth_header(self, postdata):
+        """Return the content of the OAuth 1.0a Authorization: header."""
+        # Note: This is a little weird in that we use a library (oauth2) that
+        # is itself completely capable of making HTTP requests, but only to
+        # generate the auth header. We do this, instead of adapting the above
+        # to use oauth2 instead of urllib2, because oauth2 cannot (AFAICT)
+        # open a persistent stream, which obviously we need.
+        #
+        # FIXME: This method is untested with non-empty postdata.
+        conr = oauth2.Consumer(self._consumer_key, self._consumer_secret)
+        token = oauth2.Token(self._access_token, self._access_secret)
+        parms = { 'oauth_version': '1.0',
+                  'oauth_nonce': oauth2.generate_nonce(),
+                  'oauth_timestamp': str(int(time.time())) }
+        method = 'GET'
+        if (postdata):
+            parms.update(postdata)
+            method = 'POST'
+
+        oauths = oauth2.Request(method=method, url=self.url, parameters=parms)
+        # Setting is_form_encoded prevents 'oauth_body_hash', which causes
+        # authentication failure, from being included in the OAuth parameters.
+        # See <https://dev.twitter.com/discussions/4776>. (No, it doesn't make
+        # any sense.)
+        oauths.is_form_encoded = True
+        oauths.sign_request(oauth2.SignatureMethod_HMAC_SHA1(), conr, token)
+        #pprint(oauths)
+
+        # oauths2.Request.to_header() adds a bogus "realm" parameter, so we
+        # mostly stringify ourselves, according to
+        # <https://dev.twitter.com/docs/auth/authorizing-request>.
+        return ('OAuth ' + ', '.join('%s="%s"' % (k, oauth2.escape(v))
+                                     for (k, v) in oauths.iteritems()
+                                     if k.startswith('oauth_')))
 
     def _get_post_data(self):
         """Subclasses that need to add post data to the request can override
@@ -254,13 +291,15 @@ class ReconnectingTweetStream(TweetStream):
 
     """
 
-    def __init__(self, username, password, url="sample", want_json=False,
-                 initial_wait=10, max_wait=240, error_cb=None):
+    def __init__(self, consumer_key, consumer_secret, access_token,
+                 access_secret, url="sample", want_json=False, initial_wait=10,
+                 max_wait=240, error_cb=None):
         self.initial_wait = initial_wait
         self.max_wait = max_wait
         self.curr_wait = initial_wait
         self._error_cb = error_cb
-        TweetStream.__init__(self, username, password, url=url, want_json=want_json)
+        TweetStream.__init__(self, consumer_key, consumer_secret, access_token,
+                             access_secret, url=url, want_json=want_json)
 
     def next(self):
         while True:
@@ -302,12 +341,14 @@ class FollowStream(TweetStream):
       value is the "follow" endpoint.
     """
 
-    def __init__(self, user, password, followees, url="follow", **kwargs):
+    def __init__(self, consumer_key, consumer_secret, access_token,
+                 access_secret, followees, url="follow", **kwargs):
         self.followees = followees
-        TweetStream.__init__(self, user, password, url=url, **kwargs)
+        TweetStream.__init__(self, consumer_key, consumer_secret, access_token,
+                             access_secret, url=url, **kwargs)
 
     def _get_post_data(self):
-        return urllib.urlencode({"follow": ",".join(map(str, self._encode_all(self.followees)))})
+        return {"follow": ",".join(map(str, self._encode_all(self.followees)))}
 
 
 class TrackStream(TweetStream):
@@ -323,12 +364,14 @@ class TrackStream(TweetStream):
           value is the "track" endpoint.
     """
 
-    def __init__(self, user, password, keywords, url="track", **kwargs):
+    def __init__(self, consumer_key, consumer_secret, access_token,
+                 access_secret, keywords, url="track", **kwargs):
         self.keywords = keywords
-        TweetStream.__init__(self, user, password, url=url, **kwargs)
+        TweetStream.__init__(self, consumer_key, consumer_secret, access_token,
+                             access_secret, url=url, **kwargs)
 
     def _get_post_data(self):
-        return urllib.urlencode({"track": ",".join(self._encode_all(self.keywords))})
+        return {"track": ",".join(self._encode_all(self.keywords))}
 
 
 class ReconnectingTrackStream(ReconnectingTweetStream):
@@ -353,14 +396,17 @@ class ReconnectingTrackStream(ReconnectingTweetStream):
 
     """
 
-    def __init__(self, user, password, keywords, url="track", want_json=False,
-            initial_wait=10, max_wait=240, error_cb=None):
+    def __init__(self, consumer_key, consumer_secret, access_token,
+                 access_secret, keywords, url="track", want_json=False,
+                 initial_wait=10, max_wait=240, error_cb=None):
         self.keywords = keywords
-        ReconnectingTweetStream.__init__(self, user, password, url=url, want_json=want_json,
-                initial_wait=initial_wait, max_wait=max_wait, error_cb=error_cb)
+        ReconnectingTweetStream.__init__(
+            self, consumer_key, consumer_secret, access_token, access_secret,
+            url=url, want_json=want_json, initial_wait=initial_wait,
+            max_wait=max_wait, error_cb=error_cb)
 
     def _get_post_data(self):
-        return urllib.urlencode({"track": ",".join(self._encode_all(self.keywords))})
+        return {"track": ",".join(self._encode_all(self.keywords))}
 
 
 class ReconnectingTrackFollowStream(ReconnectingTweetStream):
@@ -385,12 +431,16 @@ class ReconnectingTrackFollowStream(ReconnectingTweetStream):
 
     """
 
-    def __init__(self, user, password, keywords, user_ids, url="track", want_json=False,
-            initial_wait=10, max_wait=240, error_cb=None):
+    def __init__(self, consumer_key, consumer_secret, access_token,
+                 access_secret, keywords, user_ids, url="track",
+                 want_json=False, initial_wait=10, max_wait=240,
+                 error_cb=None):
         self.keywords = keywords
         self.user_ids = user_ids
-        ReconnectingTweetStream.__init__(self, user, password, url=url, want_json=want_json,
-                initial_wait=initial_wait, max_wait=max_wait, error_cb=error_cb)
+        ReconnectingTweetStream.__init__(
+            self, consumer_key, consumer_secret, access_token, access_secret,
+            url=url, want_json=want_json, initial_wait=initial_wait,
+            max_wait=max_wait, error_cb=error_cb)
 
     def _get_post_data(self):
         data = dict()
@@ -398,4 +448,4 @@ class ReconnectingTrackFollowStream(ReconnectingTweetStream):
             data['track'] = ",".join(self._encode_all(self.keywords))
         if len(self.user_ids) > 0:
             data['follow'] = ",".join(self._encode_all(self.user_ids))
-        return urllib.urlencode(data)
+        return data

@@ -23,5 +23,5 @@ setup(name='tweetstream',
     include_package_data=True,
     zip_safe=False,
     platforms=["any"],
-    install_requires = ['anyjson'],
+    install_requires = ['anyjson', 'oauth2'],
 )
